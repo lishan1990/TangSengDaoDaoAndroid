@@ -1,0 +1,16 @@
+static/media/ContactsTab.2e359318f5ec6f0f05538e6a8722f5cf.svg
+static/media/ContactsTabSelected.840ee3f9d11a5f6d620e0e6bc0adfea5.svg
+static/media/HomeTab.d7a29ab37ad29cd5a6f355cf7a100a2b.svg
+static/media/HomeTabSelected.8e91a7a43f69fb748410782eaf03e84a.svg
+static/media/start_chat.dcd2d18fce92465ca860eaebf5c4d373.svg
+static/media/chat_bg.4dcf5cd9721aaf82f757ddef0ed99d3b.svg
+static/media/func_face_normal.277ba8043cd93fb1b78505c7a0dfb222.svg
+static/media/func_mention_normal.8d3f9dadec265caabb5924f2baf995ad.svg
+static/media/func_screenshot.ec39e6c400ab8291eab1ca814bd9baa9.svg
+static/media/func_upload_image.d3e8d94690b35feffbc28b7cdf31e754.svg
+static/media/chat_bg.4dcf5cd9721aaf82f757.svg
+static/media/start_chat.dcd2d18fce92465ca860.svg
+static/media/func_face_normal.277ba8043cd93fb1b785.svg
+static/media/func_mention_normal.8d3f9dadec265caabb59.svg
+static/media/func_screenshot.ec39e6c400ab8291eab1.svg
+static/media/func_upload_image.d3e8d94690b35feffbc2.svg

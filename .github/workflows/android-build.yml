@@ -2,6 +2,11 @@ name: Build Android APK
 
 on:
   workflow_dispatch:
+    inputs:
+      server_url:
+        description: "客户端默认服务器地址"
+        required: false
+        default: "http://182.44.6.48:8112"
 
 permissions:
   contents: write
@@ -19,25 +24,24 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: 配置工程并注入默认服务器地址
+      - name: 配置工程
+        env:
+          SERVER_URL: ${{ github.event.inputs.server_url || 'http://182.44.6.48:8112' }}
         run: |
           printf 'sdk.dir=%s\napplicationId=com.test.ts\n' "$ANDROID_HOME" > local.properties
-          python3 << 'EOF'
-          import pathlib
-          p = pathlib.Path('app/src/main/java/com/test/demo2/TSApplication.kt')
-          s = p.read_text(encoding='utf-8')
-          lines = s.split('\n')
-          injected = False
-          for i, l in enumerate(lines):
-              if 'IllegalStateException' in l and 'api_base_url' in l:
-                  indent = l[:len(l) - len(l.lstrip())]
-                  lines[i] = indent + 'WKApiConfig.initBaseURLIncludeIP("http://182.44.6.48:8112")'
-                  injected = True
-                  break
-          assert injected, '未找到注入点（TSApplication.kt）'
-          p.write_text('\n'.join(lines), encoding='utf-8')
-          print('默认服务器地址已注入: http://182.44.6.48:8112')
-          EOF
+          python3 << 'PYEOF'
+          import os, pathlib, re
+          url = os.environ.get("SERVER_URL") or "http://182.44.6.48:8112"
+          p = pathlib.Path("app/src/main/java/com/test/demo2/TSApplication.kt")
+          s = p.read_text(encoding="utf-8")
+          # 源码已内置默认服务器地址，这里允许在手动构建时覆盖
+          pat = re.compile(r'(\bapiURL\s*=\s*")[^"]*(")')
+          if pat.search(s):
+              p.write_text(pat.sub(lambda m: m.group(1) + url + m.group(2), s, count=1), encoding="utf-8")
+              print("默认服务器地址:", url)
+          else:
+              print("源码未找到默认地址注入点，保持源码原样")
+          PYEOF
 
       - name: 编译 debug APK
         run: |
@@ -49,5 +53,5 @@ jobs:
         with:
           tag_name: v${{ github.run_number }}
           name: Android客户端 v${{ github.run_number }}
-          body: "自动编译的 debug APK，默认连接服务器 182.44.6.48"
+          body: "自动编译的 debug APK，包含群头像修改、文件消息、注册网关适配"
           files: app/build/outputs/apk/debug/app-debug.apk

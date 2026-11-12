@@ -298,5 +298,18 @@
     <string name="uikit_search_for_date">Date</string>
     <string name="uikit_go_to_chat_item">Go to chat</string>
     <string name="uikit_search_for_image">Image</string>
+    <string name="chat_file">File</string>
+    <string name="chat_file_prefix">[File]</string>
+    <string name="chat_file_default_name">File</string>
+    <string name="chat_file_click_download">Tap to download</string>
+    <string name="chat_file_not_ready">File is uploading, try later</string>
+    <string name="chat_file_downloading">Downloading file</string>
+    <string name="chat_file_task_created">Download task created</string>
+    <string name="chat_file_download_err">Download failed</string>
+    <string name="chat_file_size_limit">File exceeds the size limit (max %1$dMB)</string>
+    <string name="group_avatar">Group avatar</string>
+    <string name="group_avatar_updated">Group avatar updated</string>
+    <string name="group_avatar_no_permission">Only owner or admin can change group avatar</string>
+    <string name="group_avatar_upload_err">Upload group avatar failed</string>
 </resources>
 

@@ -81,10 +81,12 @@ import com.chat.uikit.chat.face.WKVoiceViewManager;
 import com.chat.uikit.chat.manager.FaceManger;
 import com.chat.uikit.chat.manager.WKIMUtils;
 import com.chat.uikit.chat.msgmodel.WKCardContent;
+import com.chat.uikit.chat.msgmodel.WKFileContent;
 import com.chat.uikit.chat.msgmodel.WKMultiForwardContent;
 import com.chat.uikit.chat.provider.LoadingProvider;
 import com.chat.uikit.chat.provider.WKCardProvider;
 import com.chat.uikit.chat.provider.WKEmptyProvider;
+import com.chat.uikit.chat.provider.WKFileProvider;
 import com.chat.uikit.chat.provider.WKImageProvider;
 import com.chat.uikit.chat.provider.WKMultiForwardProvider;
 import com.chat.uikit.chat.provider.WKNoRelationProvider;
@@ -196,6 +198,7 @@ public class WKUIKitApplication {
     private void initKitModuleListener() {
         // 注册消息model到sdk
         WKIM.getInstance().getMsgManager().registerContentMsg(WKCardContent.class);
+        WKIM.getInstance().getMsgManager().registerContentMsg(WKFileContent.class);
 
 
         WKIM.getInstance().getMsgManager().registerContentMsg(WKMultiForwardContent.class);
@@ -208,6 +211,7 @@ public class WKUIKitApplication {
         WKMsgItemViewManager.getInstance().addChatItemViewProvider(WKContentType.emptyView, new WKEmptyProvider());
         WKMsgItemViewManager.getInstance().addChatItemViewProvider(WKContentType.spanEmptyView, new WKSpanEmptyProvider());
         WKMsgItemViewManager.getInstance().addChatItemViewProvider(WKContentType.WK_VOICE, new WKVoiceProvider());
+        WKMsgItemViewManager.getInstance().addChatItemViewProvider(WKContentType.WK_FILE, new WKFileProvider());
         WKMsgItemViewManager.getInstance().addChatItemViewProvider(WKContentType.WK_CARD, new WKCardProvider());
         WKMsgItemViewManager.getInstance().addChatItemViewProvider(WKContentType.WK_MULTIPLE_FORWARD, new WKMultiForwardProvider());
         WKMsgItemViewManager.getInstance().addChatItemViewProvider(WKContentType.loading, new LoadingProvider());
@@ -301,6 +305,7 @@ public class WKUIKitApplication {
         });
         //添加聊天功能面板
         EndpointManager.getInstance().setMethod(EndpointCategory.chatFunction + "_chooseImg", EndpointCategory.chatFunction, 100, object -> new ChatFunctionMenu("chooseImg", R.mipmap.icon_func_album, mContext.get().getString(R.string.image), this::chooseIMG));
+        EndpointManager.getInstance().setMethod(EndpointCategory.chatFunction + "_chooseFile", EndpointCategory.chatFunction, 98, object -> new ChatFunctionMenu("chooseFile", R.drawable.icon_func_file, mContext.get().getString(R.string.chat_file), iConversationContext -> EndpointManager.getInstance().invoke("wk_chat_choose_file", iConversationContext)));
         EndpointManager.getInstance().setMethod(EndpointCategory.chatFunction + "_chooseCard", EndpointCategory.chatFunction, 95, object -> new ChatFunctionMenu("chooseCard", R.mipmap.icon_func_card, mContext.get().getString(R.string.card), IConversationContext::sendCardMsg));
 
         //添加tab页

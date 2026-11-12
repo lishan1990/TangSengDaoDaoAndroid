@@ -1,0 +1,11 @@
+{
+  "captchaMode": "image",
+  "adminPassword": "CHANGE_ME",
+  "smsFixedCode": "123456",
+  "ipDailyLimit": 1,
+  "internalSecret": "CHANGE_ME",
+  "githubRepo": "lishan1990/TangSengDaoDaoAndroid",
+  "githubToken": "",
+  "buildDailyLimit": 5,
+  "fileSizeLimitMB": 20
+}

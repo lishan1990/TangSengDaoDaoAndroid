@@ -298,5 +298,18 @@
     <string name="uikit_search_for_date">日期</string>
     <string name="uikit_go_to_chat_item">定位到聊天</string>
     <string name="uikit_search_for_image">图片</string>
+    <string name="chat_file">文件</string>
+    <string name="chat_file_prefix">[文件]</string>
+    <string name="chat_file_default_name">文件</string>
+    <string name="chat_file_click_download">点击可下载</string>
+    <string name="chat_file_not_ready">文件还未上传完成，请稍后再试</string>
+    <string name="chat_file_downloading">正在下载文件</string>
+    <string name="chat_file_task_created">已添加下载任务</string>
+    <string name="chat_file_download_err">下载失败</string>
+    <string name="chat_file_size_limit">文件大小超出限制（最大 %1$dMB）</string>
+    <string name="group_avatar">群头像</string>
+    <string name="group_avatar_updated">群头像已更新</string>
+    <string name="group_avatar_no_permission">仅群主或管理员可修改群头像</string>
+    <string name="group_avatar_upload_err">群头像上传失败</string>
 </resources>
 

@@ -107,14 +107,41 @@ class TSApplication : MultiDexApplication() {
     }
 
     private fun initApi() {
-        val apiURL = WKSharedPreferencesUtil.getInstance().getSP("api_base_url")
+        var apiURL = WKSharedPreferencesUtil.getInstance().getSP("api_base_url")
         if (TextUtils.isEmpty(apiURL)) {
-//            apiURL = ""
-//            WKApiConfig.initBaseURL(apiURL)
-            throw IllegalStateException("api_base_url 未设置，请先配置接口地址")
-        } else {
-            WKApiConfig.initBaseURLIncludeIP(apiURL)
+            // 默认接口地址（业务服务端口，即 docker-compose 中 HTTP_PORT_SERVER 映射的端口）
+            apiURL = "http://182.44.6.48:8112"
+            WKSharedPreferencesUtil.getInstance().putSP("api_base_url", apiURL)
         }
+        WKApiConfig.initBaseURLIncludeIP(apiURL)
+        fetchGatewayConfig(apiURL)
+    }
+
+    /**
+     * 从注册网关拉取配置（文件大小限制等），失败时使用默认值
+     */
+    private fun fetchGatewayConfig(apiURL: String) {
+        Thread {
+            try {
+                val client = okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+                val request = okhttp3.Request.Builder().url("$apiURL/gw/config").build()
+                val resp = client.newCall(request).execute()
+                val body = try { resp.body?.string() } catch (e: Exception) { null }
+                resp.close()
+                if (!body.isNullOrEmpty()) {
+                    val obj = com.alibaba.fastjson.JSONObject.parseObject(body)
+                    val limit = obj.getLongValue("fileSizeLimitMB")
+                    if (limit in 1..2048) {
+                        WKSharedPreferencesUtil.getInstance().putSP("file_size_limit_mb", limit.toString())
+                    }
+                }
+            } catch (e: Exception) {
+                // 静默失败，沿用本地默认值（20MB）
+            }
+        }.start()
     }
 
     private fun getAppPackageName(): String {

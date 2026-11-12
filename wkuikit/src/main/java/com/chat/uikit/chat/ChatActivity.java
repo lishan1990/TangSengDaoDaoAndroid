@@ -91,6 +91,7 @@ import com.chat.uikit.chat.manager.SendMsgEntity;
 import com.chat.uikit.chat.manager.WKIMUtils;
 import com.chat.uikit.chat.manager.WKSendMsgUtils;
 import com.chat.uikit.chat.msgmodel.WKCardContent;
+import com.chat.uikit.chat.msgmodel.WKFileContent;
 import com.chat.uikit.contacts.ChooseContactsActivity;
 import com.chat.uikit.databinding.ActChatLayoutBinding;
 import com.chat.uikit.group.ChooseVideoCallMembersActivity;
@@ -130,6 +131,7 @@ import com.xinbida.wukongim.msgmodel.WKReply;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -862,8 +864,12 @@ public class ChatActivity extends SwipeBackActivity implements IConversationCont
             }
             return 1;
         });
-        EndpointManager.getInstance().setMethod("hide_pinned_view", object -> {
-            if (!isShowPinnedView) return null;
+        // 文件发送入口（功能面板「文件」触发）
+        EndpointManager.getInstance().setMethod("wk_chat_choose_file", object -> {
+            chooseFileLac.launch("*/*");
+            return null;
+        });
+        EndpointManager.getInstance().setMethod("hide_pinned_view", object -> {            if (!isShowPinnedView) return null;
             isShowPinnedView = false;
             RelativeLayout.LayoutParams lp = (RelativeLayout.LayoutParams) wkVBinding.timeTv.getLayoutParams();
             lp.topMargin = AndroidUtilities.dp(10) + getTopPinViewHeight();
@@ -2247,6 +2253,7 @@ public class ChatActivity extends SwipeBackActivity implements IConversationCont
     protected void onDestroy() {
         super.onDestroy();
         chatPanelManager.onDestroy();
+        EndpointManager.getInstance().remove("wk_chat_choose_file");
         ActManagerUtils.getInstance().removeActivity(this);
         if (disposable != null) {
             disposable.dispose();
@@ -2316,6 +2323,57 @@ public class ChatActivity extends SwipeBackActivity implements IConversationCont
             }
         }
     });
+    ActivityResultLauncher<String> chooseFileLac = registerForActivityResult(new ActivityResultContracts.GetContent(), uri -> {
+        if (uri == null) return;
+        try {
+            // 文件大小限制（MB，后台网关配置，默认 20）
+            long limitMB = 20;
+            try {
+                String sp = WKSharedPreferencesUtil.getInstance().getSP("file_size_limit_mb");
+                if (!TextUtils.isEmpty(sp)) limitMB = Long.parseLong(sp);
+            } catch (Exception ignore) {
+            }
+            String displayName = null;
+            long size = 0;
+            android.database.Cursor cursor = getContentResolver().query(uri, null, null, null, null);
+            if (cursor != null) {
+                try {
+                    int nameIdx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
+                    int sizeIdx = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE);
+                    if (cursor.moveToFirst()) {
+                        if (nameIdx >= 0) displayName = cursor.getString(nameIdx);
+                        if (sizeIdx >= 0) size = cursor.getLong(sizeIdx);
+                    }
+                } finally {
+                    cursor.close();
+                }
+            }
+            String name = TextUtils.isEmpty(displayName) ? ("file_" + System.currentTimeMillis()) : displayName;
+            // 复制到缓存目录，获得可读取的本地路径
+            File cacheFile = new File(getCacheDir(), "send_" + System.currentTimeMillis() + "_" + name);
+            try (java.io.InputStream in = getContentResolver().openInputStream(uri);
+                 java.io.FileOutputStream out = new java.io.FileOutputStream(cacheFile)) {
+                byte[] buf = new byte[8192];
+                int len;
+                while ((len = in.read(buf)) > 0) out.write(buf, 0, len);
+            }
+            if (size <= 0) size = cacheFile.length();
+            if (limitMB > 0 && size > limitMB * 1024L * 1024L) {
+                WKToastUtils.getInstance().showToast(String.format(getString(R.string.chat_file_size_limit), limitMB));
+                //noinspection ResultOfMethodCallIgnored
+                cacheFile.delete();
+                return;
+            }
+            WKFileContent fileContent = new WKFileContent();
+            fileContent.name = name;
+            fileContent.size = size;
+            fileContent.localPath = cacheFile.getAbsolutePath();
+            sendMsg(fileContent);
+        } catch (Exception e) {
+            WKToastUtils.getInstance().showToast(getString(R.string.chat_file_download_err));
+        }
+    });
+
     ActivityResultLauncher<Intent> chooseCardResultLac = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
         if (result.getData() != null && result.getResultCode() == Activity.RESULT_OK) {
             String uid = result.getData().getStringExtra("uid");

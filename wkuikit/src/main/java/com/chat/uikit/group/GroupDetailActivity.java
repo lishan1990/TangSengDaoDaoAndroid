@@ -1,14 +1,20 @@
 package com.chat.uikit.group;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.Intent;
+import android.os.Build;
 import android.text.TextUtils;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.TextView;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
+import com.chat.base.act.WKCropImageActivity;
 import com.chat.base.act.WKWebViewActivity;
 import com.chat.base.base.WKBaseActivity;
 import com.chat.base.config.WKApiConfig;
@@ -22,7 +28,13 @@ import com.chat.base.entity.WKChannelCustomerExtras;
 import com.chat.base.entity.WKGroupType;
 import com.chat.base.msgitem.WKChannelMemberRole;
 import com.chat.base.net.HttpResponseCode;
+import com.chat.base.net.ud.WKUploader;
+import com.chat.base.glide.ChooseMimeType;
+import com.chat.base.glide.ChooseResult;
+import com.chat.base.glide.GlideUtils;
+import com.chat.base.ui.components.AvatarView;
 import com.chat.base.utils.WKDialogUtils;
+import com.chat.base.utils.WKPermissions;
 import com.chat.base.utils.WKReader;
 import com.chat.base.utils.WKToastUtils;
 import com.chat.base.utils.singleclick.SingleClickUtil;
@@ -47,6 +59,7 @@ import com.xinbida.wukongim.entity.WKChannelType;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 2019-11-30 10:24
@@ -60,6 +73,32 @@ public class GroupDetailActivity extends WKBaseActivity<ActGroupDetailLayoutBind
     private WKChannel groupChannel;
     private int groupType = 0;
     private TextView titleTv;
+    private AvatarView groupAvatarIv;
+    ActivityResultLauncher<Intent> groupAvatarResultLac = registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+        if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+            String path = result.getData().getStringExtra("path");
+            if (!TextUtils.isEmpty(path)) {
+                String url = WKApiConfig.baseUrl + "groups/" + groupNo + "/avatar?uuid=" + UUID.randomUUID().toString().replace("-", "");
+                WKUploader.getInstance().upload(url, path, new WKUploader.IUploadBack() {
+                    @Override
+                    public void onSuccess(String url1) {
+                        runOnUiThread(() -> {
+                            WKToastUtils.getInstance().showToast(getString(R.string.group_avatar_updated));
+                            String cacheKey = UUID.randomUUID().toString().replace("-", "");
+                            WKIM.getInstance().getChannelManager().updateAvatarCacheKey(groupNo, WKChannelType.GROUP, cacheKey);
+                            if (groupAvatarIv != null)
+                                groupAvatarIv.showAvatar(groupNo, WKChannelType.GROUP, cacheKey);
+                        });
+                    }
+
+                    @Override
+                    public void onError() {
+                        runOnUiThread(() -> WKToastUtils.getInstance().showToast(getString(R.string.group_avatar_upload_err)));
+                    }
+                });
+            }
+        }
+    });
     private boolean isResetMembers = false;
 
     @Override
@@ -115,6 +154,8 @@ public class GroupDetailActivity extends WKBaseActivity<ActGroupDetailLayoutBind
         View groupAvatarLayout = (View) EndpointManager.getInstance().invoke("group_avatar_view", new ChatSettingCellMenu(groupNo, WKChannelType.GROUP, wkVBinding.groupAvatarLayout));
         if (groupAvatarLayout != null) {
             wkVBinding.groupAvatarLayout.addView(groupAvatarLayout);
+        } else {
+            initGroupAvatarView();
         }
 
         View groupManagerLayout = (View) EndpointManager.getInstance().invoke("group_manager_view", new ChatSettingCellMenu(groupNo, WKChannelType.GROUP, wkVBinding.groupManageLayout));
@@ -125,6 +166,69 @@ public class GroupDetailActivity extends WKBaseActivity<ActGroupDetailLayoutBind
         if (chatPwdView != null) {
             wkVBinding.chatPwdView.addView(chatPwdView);
         }
+    }
+
+    /**
+     * 群头像修改（仅群主/管理员可操作）
+     */
+    private void initGroupAvatarView() {
+        View row = LayoutInflater.from(this).inflate(R.layout.group_avatar_row, wkVBinding.groupAvatarLayout, true);
+        groupAvatarIv = row.findViewById(R.id.groupAvatarIv);
+        groupAvatarIv.showAvatar(groupNo, WKChannelType.GROUP);
+        row.setOnClickListener(v -> {
+            if (memberRole == WKChannelMemberRole.normal) {
+                WKToastUtils.getInstance().showToast(getString(R.string.group_avatar_no_permission));
+                return;
+            }
+            chooseGroupIMG();
+        });
+    }
+
+    private void chooseGroupIMG() {
+        String desc = String.format(getString(R.string.file_permissions_des), getString(R.string.app_name));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            WKPermissions.getInstance().checkPermissions(new WKPermissions.IPermissionResult() {
+                @Override
+                public void onResult(boolean result) {
+                    if (result) launchGroupAvatarChoose();
+                }
+
+                @Override
+                public void clickResult(boolean isCancel) {
+                }
+            }, this, desc, Manifest.permission.CAMERA);
+        } else {
+            WKPermissions.getInstance().checkPermissions(new WKPermissions.IPermissionResult() {
+                @Override
+                public void onResult(boolean result) {
+                    if (result) launchGroupAvatarChoose();
+                }
+
+                @Override
+                public void clickResult(boolean isCancel) {
+                }
+            }, this, desc, Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE);
+        }
+    }
+
+    private void launchGroupAvatarChoose() {
+        GlideUtils.getInstance().chooseIMG(this, 1, true, ChooseMimeType.img, false, false, new GlideUtils.ISelectBack() {
+            @Override
+            public void onBack(List<ChooseResult> paths) {
+                if (WKReader.isNotEmpty(paths)) {
+                    String path = paths.get(0).path;
+                    if (!TextUtils.isEmpty(path)) {
+                        Intent intent = new Intent(GroupDetailActivity.this, WKCropImageActivity.class);
+                        intent.putExtra("path", path);
+                        groupAvatarResultLac.launch(intent);
+                    }
+                }
+            }
+
+            @Override
+            public void onCancel() {
+            }
+        });
     }
 
     @Override
