@@ -1,4 +1,9 @@
 # 部署前请把 CHANGE_ME 改成 config.json 中 internalSecret 的实际值
+# Web 前端 API 反代模板（上游为注册网关 registergateway:9000）
+# 上游用「变量 + Docker 内嵌 DNS」动态解析：网关容器重建导致 IP 变化时，
+# nginx 会在 TTL 到期后自动重新解析，避免继续连旧 IP 造成 /api/* 全部 502（登录报「未知错误」）。
+# 应急：若 web 与 registergateway 不在同一 docker 网络，可把下方 set 改成 <宿主机IP>:8112。
+# API_URL=${API_URL}（由 compose 注入，仅记录用）
 gzip on;
 gzip_min_length 1k;
 gzip_disable msie6;
@@ -14,8 +19,15 @@ server {
         listen       80;
         server_name  localhost;
 
+        # Docker 内嵌 DNS（127.0.0.11），每 10 秒重新解析一次上游域名
+        resolver 127.0.0.11 valid=10s ipv6=off;
+
         location /api/ {
-            proxy_pass  ${API_URL};
+            set $api_upstream "registergateway:9000";
+            # 与原来 proxy_pass http://registergateway:9000/ 等价：剥掉 /api/ 前缀
+            rewrite ^/api/(.*)$ /$1 break;
+            proxy_pass http://$api_upstream;
+            proxy_set_header Host $api_upstream;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-GW-Internal CHANGE_ME;
             client_max_body_size 1000m;
