@@ -31,8 +31,7 @@ jobs:
           for i, l in enumerate(lines):
               if 'IllegalStateException' in l and 'api_base_url' in l:
                   indent = l[:len(l) - len(l.lstrip())]
-                  lines[i] = indent + 'apiURL = "http://182.44.6.48:8112"'
-                  lines.insert(i + 1, indent + 'WKApiConfig.initBaseURLIncludeIP(apiURL)')
+                  lines[i] = indent + 'WKApiConfig.initBaseURLIncludeIP("http://182.44.6.48:8112")'
                   injected = True
                   break
           assert injected, '未找到注入点（TSApplication.kt）'
