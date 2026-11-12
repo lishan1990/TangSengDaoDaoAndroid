@@ -7,6 +7,14 @@ on:
         description: "客户端默认服务器地址"
         required: false
         default: "http://182.44.6.48:8112"
+      app_name:
+        description: "客户端名称（写入 APK 应用名）"
+        required: false
+        default: "唐僧叨叨"
+      platform:
+        description: "目标平台（当前云端编译仅支持 android）"
+        required: false
+        default: "android"
 
 permissions:
   contents: write
@@ -27,20 +35,35 @@ jobs:
       - name: 配置工程
         env:
           SERVER_URL: ${{ github.event.inputs.server_url || 'http://182.44.6.48:8112' }}
+          APP_NAME: ${{ github.event.inputs.app_name || '唐僧叨叨' }}
+          TARGET_PLATFORM: ${{ github.event.inputs.platform || 'android' }}
         run: |
           printf 'sdk.dir=%s\napplicationId=com.test.ts\n' "$ANDROID_HOME" > local.properties
           python3 << 'PYEOF'
-          import os, pathlib, re
+          import os, pathlib, re, html
           url = os.environ.get("SERVER_URL") or "http://182.44.6.48:8112"
           p = pathlib.Path("app/src/main/java/com/test/demo2/TSApplication.kt")
           s = p.read_text(encoding="utf-8")
-          # 源码已内置默认服务器地址，这里允许在手动构建时覆盖
           pat = re.compile(r'(\bapiURL\s*=\s*")[^"]*(")')
           if pat.search(s):
               p.write_text(pat.sub(lambda m: m.group(1) + url + m.group(2), s, count=1), encoding="utf-8")
               print("默认服务器地址:", url)
           else:
               print("源码未找到默认地址注入点，保持源码原样")
+
+          name = (os.environ.get("APP_NAME") or "唐僧叨叨").strip()
+          safe = html.escape(name, quote=False)
+          for f in ("app/src/main/res/values/strings.xml", "app/src/main/res/values-en/strings.xml"):
+              q = pathlib.Path(f)
+              if not q.exists():
+                  continue
+              t = q.read_text(encoding="utf-8")
+              t2 = re.sub(r'(<string name="app_name">)[^<]*(</string>)',
+                          lambda m: m.group(1) + safe + m.group(2), t, count=1)
+              if t2 != t:
+                  q.write_text(t2, encoding="utf-8")
+                  print("应用名称 ->", f, ":", name)
+          print("目标平台:", os.environ.get("TARGET_PLATFORM") or "android")
           PYEOF
 
       - name: 编译 debug APK
@@ -53,5 +76,5 @@ jobs:
         with:
           tag_name: v${{ github.run_number }}
           name: Android客户端 v${{ github.run_number }}
-          body: "自动编译的 debug APK，包含群头像修改、文件消息、注册网关适配"
+          body: "自动编译的 debug APK，应用名称来自后台「客户端生成」配置"
           files: app/build/outputs/apk/debug/app-debug.apk

@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>注册设置 - 唐僧叨叨后台</title>
 <style>
-  body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:#fff;color:#303133;margin:0;padding:8px 10px}
+  body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6fa;color:#303133;margin:0;padding:22px}
+  .wrap{max-width:560px;margin:0 auto;background:#fff;border-radius:8px;padding:24px 28px 28px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
   h1{font-size:18px;margin:0 0 4px}
   p.tip{font-size:12px;color:#909399;margin:0 0 16px;line-height:1.6}
   label{font-size:14px;color:#303133;display:block;margin:14px 0 6px}
@@ -20,6 +21,7 @@
 </style>
 </head>
 <body>
+<div class="wrap">
 <h1>注册设置</h1>
 <p class="tip">本页由管理后台内嵌打开，设置保存后立即生效，无需重启服务。</p>
 
@@ -37,6 +39,7 @@
 
 <button id="saveBtn" onclick="save()">保存设置</button>
 <div class="msg" id="msg"></div>
+</div>
 
 <script>
 /* 网关统一从主业务端口 8112 访问（9002 管理端口已取消）；网关已开放 CORS */

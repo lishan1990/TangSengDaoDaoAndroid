@@ -15,6 +15,7 @@ const path = require("path");
 const crypto = require("crypto");
 
 const CONF_PATH = path.join(__dirname, "config.json");
+const CLIENT_CONF_PATH = path.join(__dirname, "client-config.json"); // 客户端生成页的自定义配置（名称/平台/图标）
 const UPSTREAM_HOST = process.env.UPSTREAM_HOST || "tangsengdaodaoserver";
 const UPSTREAM_PORT = parseInt(process.env.UPSTREAM_PORT || "8090", 10);
 const PORT = parseInt(process.env.PORT || "9000", 10);
@@ -36,6 +37,25 @@ function loadConf() {
     return Object.assign({}, DEFAULT_CONF, JSON.parse(fs.readFileSync(CONF_PATH, "utf8")));
   } catch (e) {
     return Object.assign({}, DEFAULT_CONF);
+  }
+}
+
+/* ---------------- 客户端生成页配置（持久化到 client-config.json） ---------------- */
+const DEFAULT_CLIENT_CONF = {
+  name: "唐僧叨叨",     // 客户端名称
+  platform: "android",  // pc | android | ios
+  icon: "",             // dataURL（前端已压缩为 192×192 PNG）
+  updatedAt: "",
+};
+const PLATFORMS = ["pc", "android", "ios"];
+function loadClientConf() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(CLIENT_CONF_PATH, "utf8"));
+    const c = Object.assign({}, DEFAULT_CLIENT_CONF, raw);
+    if (PLATFORMS.indexOf(c.platform) < 0) c.platform = "android";
+    return c;
+  } catch (e) {
+    return Object.assign({}, DEFAULT_CLIENT_CONF);
   }
 }
 
@@ -247,9 +267,18 @@ async function handleBuildStart(req, res) {
   if (!conf.githubToken) {
     return sendJSON(res, 500, { status: 500, msg: "网关未配置 GitHub token，无法触发构建" });
   }
+  /* 前端可携带已保存的客户端配置；app_name 会注入 APK 的 app_name 资源 */
+  let body = {};
+  try { body = JSON.parse((await readBody(req, 64 * 1024)).toString("utf8")); } catch (e) {}
+  const clientConf = loadClientConf();
+  const inputs = {};
+  const appName = String(body.appName || clientConf.name || "").trim().slice(0, 40);
+  if (appName) inputs.app_name = appName;
+  const platform = PLATFORMS.indexOf(body.platform) > -1 ? body.platform : clientConf.platform;
+  inputs.platform = platform;
   let r;
   try {
-    r = await ghRequest("POST", `/repos/${conf.githubRepo}/actions/workflows/${WORKFLOW_FILE}/dispatches`, { ref: "master" }, conf.githubToken);
+    r = await ghRequest("POST", `/repos/${conf.githubRepo}/actions/workflows/${WORKFLOW_FILE}/dispatches`, { ref: "master", inputs }, conf.githubToken);
   } catch (e) {
     return sendJSON(res, 502, { status: 502, msg: "请求 GitHub 失败：" + e.message });
   }
@@ -360,6 +389,32 @@ const server = http.createServer(async (req, res) => {
   // 路由：网关自有接口
   if (p === "/gw/config") {
     return sendJSON(res, 200, { captchaMode: conf.captchaMode, ipDailyLimit: conf.ipDailyLimit, fileSizeLimitMB: conf.fileSizeLimitMB });
+  }
+  // 客户端生成页：自定义名称 / 平台 / 图标，保存到服务器，下次进入自动回填
+  if (p === "/gw/client/config" && req.method === "GET") {
+    return sendJSON(res, 200, { status: 200, config: loadClientConf() });
+  }
+  if (p === "/gw/client/config" && req.method === "POST") {
+    let body = {};
+    try { body = JSON.parse((await readBody(req, 4 * 1024 * 1024)).toString("utf8")); } catch (e) {
+      return sendJSON(res, 400, { status: 400, msg: "请求数据格式错误或图标过大" });
+    }
+    const prev = loadClientConf();
+    const next = {
+      name: String(body.name === undefined ? prev.name : body.name).trim().slice(0, 40) || prev.name,
+      platform: PLATFORMS.indexOf(body.platform) > -1 ? body.platform : prev.platform,
+      icon: typeof body.icon === "string" ? body.icon.slice(0, 3 * 1024 * 1024) : prev.icon,
+      updatedAt: new Date().toISOString(),
+    };
+    if (next.icon && !/^data:image\/(png|jpeg|webp);base64,/.test(next.icon)) {
+      return sendJSON(res, 400, { status: 400, msg: "图标格式不支持，请使用 PNG/JPEG/WebP 图片" });
+    }
+    try {
+      fs.writeFileSync(CLIENT_CONF_PATH, JSON.stringify(next, null, 2));
+    } catch (e) {
+      return sendJSON(res, 500, { status: 500, msg: "配置保存失败：" + e.message });
+    }
+    return sendJSON(res, 200, { status: 200, msg: "保存成功", config: next });
   }
   if (p === "/gw/captcha") {
     const c = genCaptcha();
