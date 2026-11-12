@@ -1,0 +1,54 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: 配置工程并注入默认服务器地址
+        run: |
+          printf 'sdk.dir=%s\napplicationId=com.test.ts\n' "$ANDROID_HOME" > local.properties
+          python3 << 'EOF'
+          import pathlib
+          p = pathlib.Path('app/src/main/java/com/test/demo2/TSApplication.kt')
+          s = p.read_text(encoding='utf-8')
+          lines = s.split('\n')
+          injected = False
+          for i, l in enumerate(lines):
+              if 'IllegalStateException' in l and 'api_base_url' in l:
+                  indent = l[:len(l) - len(l.lstrip())]
+                  lines[i] = indent + 'apiURL = "http://182.44.6.48:8112"'
+                  lines.insert(i + 1, indent + 'WKApiConfig.initBaseURLIncludeIP(apiURL)')
+                  injected = True
+                  break
+          assert injected, '未找到注入点（TSApplication.kt）'
+          p.write_text('\n'.join(lines), encoding='utf-8')
+          print('默认服务器地址已注入: http://182.44.6.48:8112')
+          EOF
+
+      - name: 编译 debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Android客户端 v${{ github.run_number }}
+          body: "自动编译的 debug APK，默认连接服务器 182.44.6.48"
+          files: app/build/outputs/apk/debug/app-debug.apk
