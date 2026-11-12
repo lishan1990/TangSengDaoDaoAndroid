@@ -1,11 +1,14 @@
 /**
- * 唐僧叨叨管理后台补丁 v2：「客户端生成」+「注册设置」两个菜单
+ * 唐僧叨叨管理后台补丁 v3：「客户端生成」+「注册设置」两个菜单
  * 注入点：index-3da832da.js 末尾追加，不改动任何原有代码
  * 功能：
- *  1. 登录后侧边栏自动出现「客户端生成」与「注册设置」菜单项（克隆现有菜单项样式）
+ *  1. 左侧一级图标栏底部出现「客户端生成」与「注册设置」（与原生 split-item 同款样式）
  *  2. 客户端生成：按钮 → 进度条（轮询 GitHub Actions）→ 下载按钮（gh-proxy 加速）
  *  3. 注册设置：内嵌同源页面 /gw-admin.html，直接管理验证码模式、文件大小限制等
  * 说明：网关管理页不再单独占用 9002 端口，接口统一走主业务端口 8112（CORS 已开放）
+ * v3 修复：v2 同时向 .split-list 与 .el-menu 注入，导致二级菜单出现重复项且标题拼接成
+ *         「注册设置管理员」；且自绘图标为实心 24 viewBox、文字被压到 10px，与原生
+ *         线性图标不一致。v3 仅在 .split-list 注入，并清理历史遗留的重复节点。
  */
 (function () {
   "use strict";
@@ -17,8 +20,9 @@
   var PROXY_PREFIX = "https://v4.gh-proxy.org/";
   var POLL_MS = 10000;
 
-  var PHONE_SVG = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 3v12h10V5H7zm5 13.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z" fill="currentColor"></path></svg>';
-  var GEAR_SVG = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm9.4 4c0-.5 0-1-.1-1.5l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2.6-1.5L13.9 2h-3.8l-.4 2.5c-1 .3-1.8.8-2.6 1.5l-2.4-1-2 3.4 2 1.6a8 8 0 0 0 0 3l-2 1.6 2 3.4 2.4-1c.8.7 1.6 1.2 2.6 1.5l.4 2.5h3.8l.4-2.5c1-.3 1.8-.8 2.6-1.5l2.4 1 2-3.4-2-1.6c.1-.5.1-1 .1-1.5z" fill="currentColor"></path></svg>';
+  /* 图标统一使用官方风格：48 viewBox + currentColor 描边 + stroke-width 4 */
+  var PHONE_SVG = '<svg width="1em" height="1em" viewBox="0 0 48 48" fill="none"><rect x="12" y="4" width="24" height="40" rx="3" stroke="currentColor" stroke-width="4"></rect><path d="M20 38h8" stroke="currentColor" stroke-width="4" stroke-linecap="round"></path><path d="M20 11h8" stroke="currentColor" stroke-width="4" stroke-linecap="round"></path></svg>';
+  var GEAR_SVG = '<svg width="1em" height="1em" viewBox="0 0 48 48" fill="none"><rect x="9" y="6" width="30" height="36" rx="3" stroke="currentColor" stroke-width="4"></rect><path d="M17 18h14M17 27h14M17 34h8" stroke="currentColor" stroke-width="4" stroke-linecap="round"></path></svg>';
 
   /* ---------------- 客户端生成弹层 ---------------- */
   function ensureOverlay() {
@@ -170,31 +174,43 @@
     if (frame) frame.src = SETTINGS_PAGE + "?t=" + Date.now();
   }
 
-  /* ---------------- 菜单注入（支持多个自定义菜单） ---------------- */
+  /* ---------------- 菜单注入：只在左侧一级图标栏出现一次 ---------------- */
   var MENUS = [
     { id: "build", title: "客户端生成", svg: PHONE_SVG, open: openBuild },
     { id: "settings", title: "注册设置", svg: GEAR_SVG, open: openSettings }
   ];
 
+  /* 取一个原生、未选中的一级菜单项做模板，保留 scoped 属性让原生样式生效 */
   function pickTpl(items) {
     for (var i = 0; i < items.length; i++) {
       var txt = items[i].innerText || "";
       if (txt.indexOf("设置") > -1 || txt.indexOf("工具") > -1) return items[i];
     }
-    return items[items.length - 1];
+    return items[0] || null;
   }
 
   function cloneItem(tpl, id, menu) {
     var el = tpl.cloneNode(true);
     el.id = id;
+    el.setAttribute("data-tsdd-split", "1");
+    el.setAttribute("title", menu.title);
     el.className = String(tpl.className).replace(/split-active|is-active/g, "").trim();
+    /* 保留官方 <span class="i-icon"> 容器，只替换内部 SVG */
     var svg = el.querySelector("svg");
     if (svg && menu.svg) svg.outerHTML = menu.svg;
-    var title = el.querySelector(".title") || el.querySelector("span");
-    if (title) {
-      title.textContent = menu.title;
-      title.style.cssText += "font-size:10px;white-space:nowrap;";
+    /* 只替换标题文字，图标尺寸/描边风格与其余项完全一致 */
+    var title = el.querySelector(".title");
+    if (!title) {
+      title = document.createElement("span");
+      title.className = "title";
+      var ref = el.querySelector("[data-v-337019ad]");
+      if (ref) title.setAttribute("data-v-337019ad", "");
+      el.appendChild(title);
     }
+    title.textContent = menu.title;
+    title.style.whiteSpace = "nowrap";
+    title.style.fontSize = "12px";
+    title.style.letterSpacing = "-.2px";
     el.addEventListener("click", function (e) {
       e.preventDefault();
       e.stopPropagation();
@@ -203,44 +219,44 @@
     return el;
   }
 
-  // 布局1：LayoutColumns（.split-list > .split-item）
+  /* v2 会同时向 .el-menu（中间二级菜单）注入，标题还会拼成「注册设置管理员」。
+     主动清理这些历史节点，保证任何页面状态下都只有左侧一处入口。 */
+  function cleanupLegacy() {
+    var nodes = document.querySelectorAll('[id^="tsdd-menu-"]');
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n.getAttribute("data-tsdd-split") === "1" && n.parentElement &&
+          n.parentElement.classList.contains("split-list")) continue;
+      if (n.parentNode) n.parentNode.removeChild(n);
+    }
+  }
+
   function injectSplit() {
     var list = document.querySelector(".split-list");
-    if (!list || !list.children.length) return false;
-    var items = Array.prototype.slice.call(list.querySelectorAll(".split-item"));
-    if (!items.length) return false;
-    var tpl = pickTpl(items);
+    if (!list) return false;
+    var own = Array.prototype.slice.call(list.children).filter(function (c) {
+      return c.classList && c.classList.contains("split-item") &&
+             c.getAttribute("data-tsdd-split") !== "1";
+    });
+    if (!own.length) return false;
+    var tpl = pickTpl(own);
+    if (!tpl) return false;
     for (var i = 0; i < MENUS.length; i++) {
       var m = MENUS[i], id = "tsdd-menu-" + m.id + "-split";
-      if (document.getElementById(id)) continue;
+      var old = document.getElementById(id);
+      if (old) {
+        /* 已是 v3 节点则跳过，避免 MutationObserver 反复重建导致闪烁 */
+        if (old.getAttribute("data-tsdd-split") === "1") continue;
+        old.parentNode.removeChild(old);
+      }
       list.appendChild(cloneItem(tpl, id, m));
     }
     return true;
   }
 
-  // 布局2：经典 el-menu（Vertical/Classic）
-  function injectElMenu() {
-    var aside = document.querySelector("aside.el-aside") || document.querySelector(".el-aside");
-    if (!aside) return false;
-    var menu = aside.querySelector(".el-menu");
-    if (!menu || !menu.children.length) return false;
-    var items = Array.prototype.slice.call(menu.children).filter(function (li) {
-      return /el-menu-item|el-sub-menu/.test(String(li.className));
-    });
-    if (!items.length) return false;
-    var tpl = pickTpl(items);
-    for (var i = 0; i < MENUS.length; i++) {
-      var m = MENUS[i], id = "tsdd-menu-" + m.id;
-      if (document.getElementById(id)) continue;
-      menu.appendChild(cloneItem(tpl, id, m));
-    }
-    return true;
-  }
-
   function injectMenu() {
-    var a = injectSplit();
-    var b = injectElMenu();
-    return a || b;
+    cleanupLegacy();
+    return injectSplit();
   }
 
   var mo = new MutationObserver(function () { injectMenu(); });
@@ -253,5 +269,5 @@
   } else {
     startWatch();
   }
-  console.log("[TSDD] 客户端生成 / 注册设置补丁已加载");
+  console.log("[TSDD] 客户端生成 / 注册设置补丁 v3 已加载");
 })();
