@@ -1,7 +1,7 @@
 
-;/* ================== TSDD Register Patch v2.0 ================== */
-;/* 登录页注入"注册账号"按钮（与登录按钮同排同样式）+ 注册弹窗      */
-;/* 验证码模式由注册网关配置决定：sms=短信验证码 / image=图片验证码  */
+;/* ================== TSDD Register Patch v3.0 ================== */
+;/* 登录页注入"注册账号"小文字链接（参考蓝奏云：登录按钮下方右对齐） */
+;/* 注册弹窗保持不变；验证码模式由网关配置决定                      */
 ;(function () {
   if (window.__TSDD_REGISTER_PATCH__) return;
   window.__TSDD_REGISTER_PATCH__ = true;
@@ -160,30 +160,34 @@
     }
   }
 
-  /* ---------- 登录页注入"注册账号"按钮（与登录按钮同排同样式） ---------- */
+  /* ---------- 登录页注入小号文字链接（参考蓝奏云「创建新账户?」） ---------- */
   function inject() {
-    if (document.getElementById("tsdd-register-btn")) return;
-    var row = document.querySelector(".wk-login-content-form-buttons");
-    if (!row) return;
-    /* 同一套布局规则：与登录按钮同排，间隔 12px */
-    if (!document.getElementById("tsdd-register-style")) {
-      var st = document.createElement("style");
-      st.id = "tsdd-register-style";
-      st.textContent = ".wk-login-content-form-buttons>.wk-login-content-form-ok{margin-left:0!important;margin-right:0!important;margin-top:24px}" +
-        ".wk-login-content-form-buttons>.wk-login-content-form-ok:last-child{margin-left:12px!important}";
-      document.head.appendChild(st);
-    }
-    /* 复用登录按钮的类名（Semi UI primary solid + wk-login-content-form-ok），样式完全一致 */
-    var btn = h("button", "margin-left:12px;", {
-      type: "button", text: "注册账号", onclick: openModal,
+    if (document.getElementById("tsdd-register-link")) return;
+    var form = document.querySelector(".wk-login-content-form");
+    var row = form && form.querySelector(".wk-login-content-form-buttons");
+    if (!form || !row) return;
+
+    /* 兼容旧版本残留：移除 v2 的大按钮与其样式，恢复登录按钮原生布局 */
+    var oldBtn = document.getElementById("tsdd-register-btn");
+    if (oldBtn) oldBtn.remove();
+    var oldStyle = document.getElementById("tsdd-register-style");
+    if (oldStyle) oldStyle.remove();
+
+    var wrap = h("div", "width:320px;max-width:100%;box-sizing:border-box;margin:8px auto 0;padding-right:4px;text-align:right;");
+    var link = h("a", "font-size:12px;line-height:18px;color:#606266;text-decoration:underline;cursor:pointer;background:none;border:0;padding:0;", {
+      text: "注册账号", href: "#", onclick: function (e) { e.preventDefault(); openModal(); },
     });
-    btn.id = "tsdd-register-btn";
-    btn.className = "sema-button sema-button-primary sema-button-solid sema-button-size_default wk-login-content-form-ok";
-    row.appendChild(btn);
+    link.id = "tsdd-register-link";
+    wrap.appendChild(link);
+
+    /* 放在登录按钮下方、扫描登录上方，右对齐 */
+    var others = form.querySelector(".wk-login-content-form-others");
+    if (others) form.insertBefore(wrap, others);
+    else form.appendChild(wrap);
   }
 
   var mo = new MutationObserver(inject);
   if (document.documentElement) mo.observe(document.documentElement, { childList: true, subtree: true });
   inject();
 })();
-/* ================== /TSDD Register Patch v2.0 ================== */
+/* ================== /TSDD Register Patch v3.0 ================== */

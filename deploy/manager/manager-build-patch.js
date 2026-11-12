@@ -1,22 +1,26 @@
 /**
- * 唐僧叨叨管理后台补丁：「客户端生成」菜单 + 安卓 APK 在线构建页面
+ * 唐僧叨叨管理后台补丁 v2：「客户端生成」+「注册设置」两个菜单
  * 注入点：index-3da832da.js 末尾追加，不改动任何原有代码
  * 功能：
- *  1. 登录后侧边栏自动出现「客户端生成」菜单项（克隆现有菜单项样式）
- *  2. 点击后弹出构建页：生成安卓客户端按钮 → 进度条（轮询 GitHub Actions 状态）→ 下载按钮
- *  3. 下载链接自动加前缀 https://v4.gh-proxy.org/（国内加速）
- * 依赖：网关 /gw/build/start 与 /gw/build/status（CORS 已开放）
+ *  1. 登录后侧边栏自动出现「客户端生成」与「注册设置」菜单项（克隆现有菜单项样式）
+ *  2. 客户端生成：按钮 → 进度条（轮询 GitHub Actions）→ 下载按钮（gh-proxy 加速）
+ *  3. 注册设置：内嵌同源页面 /gw-admin.html，直接管理验证码模式、文件大小限制等
+ * 说明：网关管理页不再单独占用 9002 端口，接口统一走主业务端口 8112（CORS 已开放）
  */
 (function () {
   "use strict";
   if (window.__TSDD_BUILD_PATCH__) return;
   window.__TSDD_BUILD_PATCH__ = true;
 
-  var GW_BASE = location.protocol + "//" + location.hostname + ":9002";
+  var GW_BASE = location.protocol + "//" + location.hostname + ":8112";
+  var SETTINGS_PAGE = "/gw-admin.html";
   var PROXY_PREFIX = "https://v4.gh-proxy.org/";
   var POLL_MS = 10000;
 
-  /* ---------------- 构建页 UI ---------------- */
+  var PHONE_SVG = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 3v12h10V5H7zm5 13.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z" fill="currentColor"></path></svg>';
+  var GEAR_SVG = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm9.4 4c0-.5 0-1-.1-1.5l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2.6-1.5L13.9 2h-3.8l-.4 2.5c-1 .3-1.8.8-2.6 1.5l-2.4-1-2 3.4 2 1.6a8 8 0 0 0 0 3l-2 1.6 2 3.4 2.4-1c.8.7 1.6 1.2 2.6 1.5l.4 2.5h3.8l.4-2.5c1-.3 1.8-.8 2.6-1.5l2.4 1 2-3.4-2-1.6c.1-.5.1-1 .1-1.5z" fill="currentColor"></path></svg>';
+
+  /* ---------------- 客户端生成弹层 ---------------- */
   function ensureOverlay() {
     if (document.getElementById("tsdd-build-mask")) return;
     var mask = document.createElement("div");
@@ -65,7 +69,7 @@
         if (j.state === "queued") { setProgress(6, "排队中，等待 GitHub 分配构建机…"); return; }
         if (j.state === "in_progress") {
           var elapsed = (Date.now() - new Date(j.createdAt).getTime()) / 1000;
-          var p = Math.min(92, 12 + elapsed / 9); // 约 12 分钟到 90%
+          var p = Math.min(92, 12 + elapsed / 9);
           setProgress(p, "正在云端编译（已进行 " + Math.round(elapsed / 60) + " 分钟）…");
           return;
         }
@@ -109,7 +113,6 @@
         btn.textContent = "生成安卓客户端";
       });
     };
-    // 打开页面时若有正在进行的构建则恢复进度显示
     mask.addEventListener("tsdd-open", function () {
       fetch(GW_BASE + "/gw/build/status").then(function (r) { return r.json(); }).then(function (j) {
         if (j.state === "queued" || j.state === "in_progress") {
@@ -139,38 +142,84 @@
     mask.dispatchEvent(new Event("tsdd-open"));
   }
 
-  /* ---------------- 菜单注入 ---------------- */
-  var PHONE_SVG = '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 3v12h10V5H7zm5 13.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z" fill="currentColor"></path></svg>';
+  /* ---------------- 注册设置弹层（内嵌 8110 同源页面） ---------------- */
+  function ensureSettingsOverlay() {
+    if (document.getElementById("tsdd-settings-mask")) return;
+    var mask = document.createElement("div");
+    mask.id = "tsdd-settings-mask";
+    mask.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100000;display:none;align-items:center;justify-content:center;";
+    mask.innerHTML =
+      '<div style="background:#fff;border-radius:12px;width:440px;max-width:92vw;padding:20px 22px 22px;box-shadow:0 8px 40px rgba(0,0,0,.2)">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between">' +
+      '<div style="font-size:18px;font-weight:600;color:#303133">注册设置</div>' +
+      '<div id="tsdd-settings-close" style="cursor:pointer;font-size:20px;color:#909399;padding:0 4px">✕</div></div>' +
+      '<div style="font-size:12px;color:#909399;margin-top:4px">验证码模式、IP 注册限制与客户端文件大小上限</div>' +
+      '<iframe id="tsdd-settings-frame" src="' + SETTINGS_PAGE + '" style="width:100%;height:500px;border:0;margin-top:12px"></iframe>' +
+      "</div>";
+    document.body.appendChild(mask);
+    var close = function () { mask.style.display = "none"; };
+    mask.querySelector("#tsdd-settings-close").onclick = close;
+    mask.addEventListener("click", function (e) { if (e.target === mask) close(); });
+  }
 
-  // 布局1：LayoutColumns（.split-list > .split-item，图标+竖排文字）
-  function injectSplit() {
-    var list = document.querySelector(".split-list");
-    if (!list || !list.children.length || document.getElementById("tsdd-menu-build-split")) return;
-    var tpl = null;
-    var items = Array.prototype.slice.call(list.querySelectorAll(".split-item"));
+  function openSettings() {
+    ensureSettingsOverlay();
+    var mask = document.getElementById("tsdd-settings-mask");
+    mask.style.display = "flex";
+    var frame = mask.querySelector("#tsdd-settings-frame");
+    if (frame) frame.src = SETTINGS_PAGE + "?t=" + Date.now();
+  }
+
+  /* ---------------- 菜单注入（支持多个自定义菜单） ---------------- */
+  var MENUS = [
+    { id: "build", title: "客户端生成", svg: PHONE_SVG, open: openBuild },
+    { id: "settings", title: "注册设置", svg: GEAR_SVG, open: openSettings }
+  ];
+
+  function pickTpl(items) {
     for (var i = 0; i < items.length; i++) {
-      if ((items[i].innerText || "").indexOf("设置") > -1 || (items[i].innerText || "").indexOf("工具") > -1) { tpl = items[i]; break; }
+      var txt = items[i].innerText || "";
+      if (txt.indexOf("设置") > -1 || txt.indexOf("工具") > -1) return items[i];
     }
-    if (!tpl) tpl = items[items.length - 1];
+    return items[items.length - 1];
+  }
+
+  function cloneItem(tpl, id, menu) {
     var el = tpl.cloneNode(true);
-    el.id = "tsdd-menu-build-split";
-    el.className = String(tpl.className).replace("split-active", "").trim();
+    el.id = id;
+    el.className = String(tpl.className).replace(/split-active|is-active/g, "").trim();
     var svg = el.querySelector("svg");
-    if (svg) {
-      svg.outerHTML = PHONE_SVG;
+    if (svg && menu.svg) svg.outerHTML = menu.svg;
+    var title = el.querySelector(".title") || el.querySelector("span");
+    if (title) {
+      title.textContent = menu.title;
+      title.style.cssText += "font-size:10px;white-space:nowrap;";
     }
-    var title = el.querySelector(".title");
-    if (title) { title.textContent = "客户端生成"; title.style.cssText += "font-size:10px;white-space:nowrap;"; }
     el.addEventListener("click", function (e) {
       e.preventDefault();
       e.stopPropagation();
-      openBuild();
+      menu.open();
     });
-    list.appendChild(el);
+    return el;
   }
-  // 布局2：经典 el-menu（Vertical/Classic 布局）
+
+  // 布局1：LayoutColumns（.split-list > .split-item）
+  function injectSplit() {
+    var list = document.querySelector(".split-list");
+    if (!list || !list.children.length) return false;
+    var items = Array.prototype.slice.call(list.querySelectorAll(".split-item"));
+    if (!items.length) return false;
+    var tpl = pickTpl(items);
+    for (var i = 0; i < MENUS.length; i++) {
+      var m = MENUS[i], id = "tsdd-menu-" + m.id + "-split";
+      if (document.getElementById(id)) continue;
+      list.appendChild(cloneItem(tpl, id, m));
+    }
+    return true;
+  }
+
+  // 布局2：经典 el-menu（Vertical/Classic）
   function injectElMenu() {
-    if (document.getElementById("tsdd-menu-build")) return true;
     var aside = document.querySelector("aside.el-aside") || document.querySelector(".el-aside");
     if (!aside) return false;
     var menu = aside.querySelector(".el-menu");
@@ -179,35 +228,24 @@
       return /el-menu-item|el-sub-menu/.test(String(li.className));
     });
     if (!items.length) return false;
-    var tpl = null;
-    for (var i = 0; i < items.length; i++) {
-      if ((items[i].innerText || "").indexOf("设置") > -1 || (items[i].innerText || "").indexOf("工具") > -1) { tpl = items[i]; break; }
+    var tpl = pickTpl(items);
+    for (var i = 0; i < MENUS.length; i++) {
+      var m = MENUS[i], id = "tsdd-menu-" + m.id;
+      if (document.getElementById(id)) continue;
+      menu.appendChild(cloneItem(tpl, id, m));
     }
-    if (!tpl) tpl = items[items.length - 1];
-    var li = tpl.cloneNode(true);
-    li.id = "tsdd-menu-build";
-    li.className = String(tpl.className).replace("is-active", "").trim();
-    var svg = li.querySelector("svg");
-    if (svg) svg.outerHTML = PHONE_SVG;
-    var span = li.querySelector("span");
-    if (!span) { span = document.createElement("span"); li.appendChild(span); }
-    span.textContent = "客户端生成";
-    li.addEventListener("click", function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      openBuild();
-    });
-    menu.appendChild(li);
     return true;
   }
+
   function injectMenu() {
-    injectSplit();
-    return injectElMenu();
+    var a = injectSplit();
+    var b = injectElMenu();
+    return a || b;
   }
 
   var mo = new MutationObserver(function () { injectMenu(); });
   function startWatch() {
-    if (injectMenu()) return;
+    injectMenu();
     mo.observe(document.body, { childList: true, subtree: true });
   }
   if (document.readyState === "loading") {
@@ -215,5 +253,5 @@
   } else {
     startWatch();
   }
-  console.log("[TSDD] 客户端生成补丁已加载");
+  console.log("[TSDD] 客户端生成 / 注册设置补丁已加载");
 })();

@@ -66,8 +66,7 @@ services:
     volumes:
       - ${APP_PATH}/gateway:/app
     ports:
-      - "${HTTP_PORT_SERVER}:9000"  # 接管原业务服务端口（安卓等客户端直连入口）
-      - "9002:9000"                 # 管理页 http://IP:9002/gw-admin
+      - "${HTTP_PORT_SERVER}:9000"  # 唯一对外端口：业务 API + /gw/* 接口（注册设置页已内嵌到 8110 后台，不再单独占用 9002）
     depends_on:
       - tangsengdaodaoserver
     networks:
@@ -78,7 +77,11 @@ services:
     environment:
       - API_URL=http://tangsengdaodaoserver:8090/
     volumes:
-      - ${APP_PATH}/manager:/usr/share/nginx/html  # 挂载自定义后台前端（含客户端生成菜单补丁）
+      # 只覆盖定制文件，其余静态资源（含布局/工具栏等 chunk）继续使用镜像内置文件，
+      # 避免整目录挂载覆盖导致部分 chunk 404、后台登录后无法加载布局
+      - ${APP_PATH}/manager/index.html:/usr/share/nginx/html/index.html
+      - ${APP_PATH}/manager/static/js/index-3da832da.js:/usr/share/nginx/html/static/js/index-3da832da.js
+      - ${APP_PATH}/manager/gw-admin.html:/usr/share/nginx/html/gw-admin.html
     ports:
       - "${HTTP_PORT_WEB}:80"
     labels:

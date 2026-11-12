@@ -6,7 +6,7 @@
  *     - image 模式校验图片验证码，转发注册请求时自动填入固定短信验证码（服务端无感知）
  *     - 同一 IP 每天最多注册 N 个账号（默认 1）
  *  2. 其余所有请求原样透传到 tangsengdaodaoserver:8090
- * 管理页：http://<ip>:9002/gw-admin
+ * 管理页：已内嵌到 8110 后台（/gw-admin.html），接口统一走唯一对外端口 8112
  */
 const http = require("http");
 const https = require("https");

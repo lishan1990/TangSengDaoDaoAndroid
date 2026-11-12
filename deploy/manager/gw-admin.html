@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>注册设置 - 唐僧叨叨后台</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:#fff;color:#303133;margin:0;padding:8px 10px}
+  h1{font-size:18px;margin:0 0 4px}
+  p.tip{font-size:12px;color:#909399;margin:0 0 16px;line-height:1.6}
+  label{font-size:14px;color:#303133;display:block;margin:14px 0 6px}
+  input[type=text],input[type=password]{width:100%;box-sizing:border-box;height:38px;border:1px solid #dcdfe6;border-radius:6px;padding:0 12px;font-size:14px;outline:none}
+  input[type=text]:focus,input[type=password]:focus{border-color:#fc4b35}
+  .radio{display:flex;align-items:flex-start;gap:8px;margin:8px 0;font-size:13px;color:#606266;line-height:1.5}
+  .radio input{margin-top:2px;flex-shrink:0}
+  .readonly{font-size:12px;color:#909399;background:#f5f7fa;border-radius:6px;padding:10px 12px;margin-top:16px;line-height:1.6}
+  button{width:100%;height:40px;border:none;border-radius:6px;background:#fc4b35;color:#fff;font-size:15px;cursor:pointer;margin-top:18px}
+  button:disabled{opacity:.6;cursor:default}
+  .msg{font-size:13px;min-height:18px;margin-top:10px;text-align:center;color:#67c23a}
+</style>
+</head>
+<body>
+<h1>注册设置</h1>
+<p class="tip">本页由管理后台内嵌打开，设置保存后立即生效，无需重启服务。</p>
+
+<label>管理密码</label>
+<input type="password" id="pwd" placeholder="请输入网关管理密码">
+
+<label>注册验证码模式</label>
+<div class="radio"><input type="radio" name="mode" id="mSms" value="sms"><span>短信验证码（需配置短信服务商，或使用服务器固定验证码）</span></div>
+<div class="radio"><input type="radio" name="mode" id="mImg" value="image"><span>图片验证码（推荐，关闭短信验证码时启用）</span></div>
+
+<label>安卓发送文件大小上限（MB，1~2048）</label>
+<input type="text" id="fileLimit" placeholder="默认 20">
+
+<div class="readonly" id="ipInfo">同一 IP 每天最多注册 1 个账号（由网关配置控制）</div>
+
+<button id="saveBtn" onclick="save()">保存设置</button>
+<div class="msg" id="msg"></div>
+
+<script>
+/* 网关统一从主业务端口 8112 访问（9002 管理端口已取消）；网关已开放 CORS */
+var GW_BASE = location.protocol + "//" + location.hostname + ":8112";
+var msg = document.getElementById("msg");
+
+function loadConfig() {
+  fetch(GW_BASE + "/gw/config", { cache: "no-store" })
+    .then(function (r) { return r.json(); })
+    .then(function (c) {
+      (c.captchaMode === "image" ? document.getElementById("mImg") : document.getElementById("mSms")).checked = true;
+      if (c.fileSizeLimitMB) document.getElementById("fileLimit").value = c.fileSizeLimitMB;
+      if (c.ipDailyLimit) document.getElementById("ipInfo").textContent = "同一 IP 每天最多注册 " + c.ipDailyLimit + " 个账号（由网关配置控制）";
+    })
+    .catch(function () { msg.style.color = "#f56c6c"; msg.textContent = "无法读取网关配置，请确认网关服务正常"; });
+}
+
+function save() {
+  var pwd = document.getElementById("pwd").value;
+  var captchaMode = document.getElementById("mImg").checked ? "image" : "sms";
+  var fileLimitRaw = document.getElementById("fileLimit").value.trim();
+  var body = { password: pwd, captchaMode: captchaMode };
+  if (fileLimitRaw !== "") body.fileSizeLimitMB = parseInt(fileLimitRaw, 10);
+  var btn = document.getElementById("saveBtn");
+  btn.disabled = true;
+  msg.style.color = "#909399";
+  msg.textContent = "保存中…";
+  fetch(GW_BASE + "/gw/admin/mode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  }).then(function (r) { return r.json(); }).then(function (j) {
+    btn.disabled = false;
+    if (j.status === 200) {
+      msg.style.color = "#67c23a";
+      msg.textContent = "保存成功，立即生效";
+      loadConfig();
+    } else {
+      msg.style.color = "#f56c6c";
+      msg.textContent = j.msg || "保存失败";
+    }
+  }).catch(function () {
+    btn.disabled = false;
+    msg.style.color = "#f56c6c";
+    msg.textContent = "网络错误，无法连接注册网关";
+  });
+}
+
+loadConfig();
+</script>
+</body>
+</html>
