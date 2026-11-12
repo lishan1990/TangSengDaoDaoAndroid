@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 聊天工具栏「发送名片」图标：与原生 40x30dp 圆角彩色底 + 白色线性图形保持一致 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="30dp"
+    android:viewportWidth="40"
+    android:viewportHeight="30">
+    <path
+        android:fillColor="#9B6DF0"
+        android:pathData="M6,0H34A6,6 0 0,1 40,6V24A6,6 0 0,1 34,30H6A6,6 0 0,1 0,24V6A6,6 0 0,1 6,0Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineJoin="round"
+        android:pathData="M9,8H31A2,2 0 0,1 33,10V22A2,2 0 0,1 31,24H9A2,2 0 0,1 7,22V10A2,2 0 0,1 9,8Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:pathData="M16.5,15.2A3,3 0 1,1 16.5,12.2A3,3 0 1,1 16.5,15.2Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M11.5,21A5.2,5.2 0 0,1 21.5,21" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M25,13H29M25,17H29M25,21H28" />
+</vector>

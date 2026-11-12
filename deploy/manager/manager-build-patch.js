@@ -1,15 +1,15 @@
 /**
- * 唐僧叨叨管理后台补丁 v4
+ * 唐僧叨叨管理后台补丁 v5
  * 注入点：index-3da832da.js 末尾追加，不改动任何原有代码
  *
  * 1. 左侧一级图标栏新增「客户端生成」「注册设置」，样式与原生 split-item 完全一致
- * 2. 两个功能不再是全屏弹窗，而是内嵌到后台主内容区（顶栏/侧边栏保持可见可点击）
+ * 2. 两个功能内嵌到后台内容区，互斥切换，不留上一个菜单的选中态/二级菜单/标签页
  * 3. 客户端生成页支持自定义：名称、平台（PC / 安卓 / iOS）、图标；
  *    配置经网关 /gw/client/config 持久化到服务器，下次进入自动回填
  * 4. 云端编译保留进度条与 https://v4.gh-proxy.org/ 加速下载
  *
- * v4 变更：菜单恢复原生 14px 字号与 68×62 尺寸；去掉 ?v=3 版本号（会导致主包重复加载白屏）；
- *         删除 v2/v3 的全屏 mask 弹层；新增客户端配置读写。
+ * v5 变更：进入自定义菜单时清除原生 split-active、内嵌层覆盖 el-aside 二级菜单与 tabs-box
+ *         标签栏（只保留一级图标栏与顶栏），退出时恢复原选中项；异步回调加页面存活校验。
  */
 (function () {
   "use strict";
@@ -34,6 +34,8 @@
   var pageEl = null;
   var pageRO = null;
   var pollTimer = null;
+  var pageSeq = 0;                 // 每次打开页面递增，用于丢弃上一页的异步回调
+  var savedNativeActive = null;    // 打开本页之前原生菜单的选中项
 
   function findHost() {
     return document.querySelector("main.el-main") || document.querySelector(".el-main");
@@ -77,19 +79,30 @@
       "#tsdd-build-download{display:inline-block;height:38px;line-height:38px;padding:0 22px;border-radius:6px;background:#fc4b35;color:#fff;text-decoration:none;font-size:14px}",
       "#tsdd-build-log{display:inline-block;margin-left:16px;color:#3d7fff;font-size:13px;text-decoration:none}",
       "#tsdd-settings-frame{width:100%;height:600px;border:0;background:transparent}",
-      ".tsdd-divider{height:1px;background:#ebeef5;margin:0 0 18px}"
+      ".tsdd-divider{height:1px;background:#ebeef5;margin:0 0 18px}",
+      /* 自定义页打开时，原生一级菜单不允许再显示选中高亮（防止 Vue 回填） */
+      "body.tsdd-open .split-list .split-item.split-active:not([data-tsdd-split=\"1\"]){background:transparent!important}",
+      "body.tsdd-open .split-list .split-item.split-active:not([data-tsdd-split=\"1\"]) .el-icon," +
+      "body.tsdd-open .split-list .split-item.split-active:not([data-tsdd-split=\"1\"]) .title{color:#606266!important}"
     ].join("");
     document.head.appendChild(st);
   }
 
+  /* 覆盖区域：一级图标栏右侧 + 顶栏下方的全部区域。
+     这样原生二级菜单（el-aside）和上一个页面的标签（tabs-box）都会被内嵌页盖住，
+     只保留一级图标栏和顶栏，菜单状态看起来与真实路由切换一致。 */
   function positionPage() {
+    if (!pageEl) return;
+    var split = document.querySelector(".aside-split");
+    var header = document.querySelector("header.el-header");
     var host = findHost();
-    if (!host || !pageEl) return;
-    var r = host.getBoundingClientRect();
-    pageEl.style.left = r.left + "px";
-    pageEl.style.top = r.top + "px";
-    pageEl.style.width = r.width + "px";
-    pageEl.style.height = r.height + "px";
+    var left = split ? Math.round(split.getBoundingClientRect().right) : 0;
+    var top = header ? Math.round(header.getBoundingClientRect().bottom) : 0;
+    if (!top && host) top = Math.round(host.getBoundingClientRect().top);
+    pageEl.style.left = left + "px";
+    pageEl.style.top = top + "px";
+    pageEl.style.width = Math.max(0, window.innerWidth - left) + "px";
+    pageEl.style.height = Math.max(0, window.innerHeight - top) + "px";
   }
 
   function ensurePage() {
@@ -97,7 +110,7 @@
     ensurePageStyle();
     pageEl = document.createElement("div");
     pageEl.id = "tsdd-page";
-    pageEl.style.cssText = "position:fixed;z-index:900;background:#f5f6fa;overflow:auto;display:none;box-sizing:border-box;";
+    pageEl.style.cssText = "position:fixed;z-index:1500;background:#f5f6fa;overflow:auto;display:none;box-sizing:border-box;";
     document.body.appendChild(pageEl);
     window.addEventListener("resize", positionPage);
     var host = findHost();
@@ -118,23 +131,50 @@
     for (var i = 0; i < list.length; i++) list[i].classList.remove("split-active");
   }
 
-  function closePage() {
+  /* 清除原生一级菜单的选中态；Vue 若回填，由 syncMenuState 再清一次 */
+  function clearNativeActive() {
+    var list = document.querySelectorAll('.split-item.split-active:not([data-tsdd-split="1"])');
+    if (!savedNativeActive && list.length) savedNativeActive = list[0];
+    for (var i = 0; i < list.length; i++) list[i].classList.remove("split-active");
+  }
+
+  function syncMenuState() {
+    if (!pageEl || pageEl.style.display === "none") return;
+    clearNativeActive();
+  }
+
+  function restoreNativeActive() {
+    if (savedNativeActive && savedNativeActive.isConnected) {
+      savedNativeActive.classList.add("split-active");
+    }
+    savedNativeActive = null;
+  }
+
+  /* restore=false：由原生菜单点击触发（Vue 会自己设置新选中项），不要回填旧项 */
+  function closePage(restore) {
     if (pageEl) pageEl.style.display = "none";
+    document.body.classList.remove("tsdd-open");
+    pageSeq++;
     stopPoll();
     clearActiveMenu();
+    if (restore === true) restoreNativeActive();
+    else savedNativeActive = null;
   }
 
   function openPage(title, bodyHTML, menuId, onReady) {
     stopPoll();
+    pageSeq++;
     var el = ensurePage();
     el.innerHTML =
       '<div class="tsdd-head"><h2>' + title + '</h2><div class="tsdd-back" id="tsdd-page-close">返回后台</div></div>' +
       '<div class="tsdd-body">' + bodyHTML + "</div>";
     el.style.display = "block";
+    document.body.classList.add("tsdd-open");
+    clearNativeActive();
+    clearActiveMenu();
     positionPage();
     el.scrollTop = 0;
-    el.querySelector("#tsdd-page-close").onclick = closePage;
-    clearActiveMenu();
+    el.querySelector("#tsdd-page-close").onclick = function () { closePage(true); };
     if (menuId) {
       var m = document.getElementById(menuId);
       if (m) m.classList.add("split-active");
@@ -149,7 +189,7 @@
     if (pageEl.contains(t)) return;
     if (t.closest && t.closest('[data-tsdd-split="1"]')) return;
     if (t.closest && (t.closest(".split-list") || t.closest(".el-menu") ||
-                      t.closest(".tabs-box") || t.closest(".el-header"))) closePage();
+                      t.closest(".tabs-box") || t.closest(".el-header"))) closePage(false);
   }, true);
 
   /* ================= 客户端生成页 ================= */
@@ -194,6 +234,11 @@
   }
 
   function initClientPage(el) {
+    var seq = pageSeq;
+    var alive = function () {
+      return seq === pageSeq && pageEl && pageEl.style.display !== "none" &&
+             !!el.querySelector("#tsdd-client-name");
+    };
     var $ = function (id) { return el.querySelector("#" + id); };
     var state = { name: "唐僧叨叨", platform: "android", icon: "" };
 
@@ -285,12 +330,14 @@
       btn.disabled = true;
       setMsg("保存中…", true);
       saveConfig().then(function (j) {
+        if (!alive()) return;
         btn.disabled = false;
         if (j.status === 200) {
           setMsg("保存成功，下次进入自动加载", true);
           renderCurrent();
         } else setMsg(j.msg || "保存失败", false);
       }).catch(function () {
+        if (!alive()) return;
         btn.disabled = false;
         setMsg("网络错误，无法连接网关（需重启 registergateway）", false);
       });
@@ -300,8 +347,8 @@
     fill(state);
     fetch(GW_BASE + "/gw/client/config", { cache: "no-store" })
       .then(function (r) { return r.json(); })
-      .then(function (j) { if (j.status === 200 && j.config) fill(j.config); })
-      .catch(function () { setMsg("无法读取已保存配置，请确认网关已重启", false); });
+      .then(function (j) { if (alive() && j.status === 200 && j.config) fill(j.config); })
+      .catch(function () { if (alive()) setMsg("无法读取已保存配置，请确认网关已重启", false); });
 
     /* ---------------- 云端编译 ---------------- */
     function setProgress(p, text) {
@@ -322,7 +369,7 @@
       fetch(GW_BASE + "/gw/build/status", { cache: "no-store" })
         .then(function (r) { return r.json(); })
         .then(function (j) {
-          if (!pageEl || pageEl.style.display === "none") return;
+          if (!alive()) return;
           if (!$("tsdd-build-progress")) return;
           if (j.state === "none") return;
           var wrap = $("tsdd-build-progress-wrap");
@@ -357,11 +404,13 @@
         btn.disabled = true;
         setBuildMsg("正在保存 " + PLATFORM_LABEL[c.platform] + " 平台配置…", true);
         saveConfig().then(function (j) {
+          if (!alive()) return;
           btn.disabled = false;
           setBuildMsg(j.status === 200
             ? PLATFORM_LABEL[c.platform] + " 配置已保存；当前云端编译仅支持安卓"
             : (j.msg || "保存失败"), j.status === 200);
         }).catch(function () {
+          if (!alive()) return;
           btn.disabled = false;
           setBuildMsg("网络错误，无法连接网关", false);
         });
@@ -378,6 +427,7 @@
           body: JSON.stringify({ appName: c.name, platform: c.platform })
         });
       }).then(function (r) { return r.json(); }).then(function (j) {
+        if (!alive()) return;
         if (j.status === 200) {
           $("tsdd-build-result").style.display = "none";
           $("tsdd-build-progress-wrap").style.display = "block";
@@ -394,6 +444,7 @@
           setBuildMsg(j.msg || "触发失败", false);
         }
       }).catch(function () {
+        if (!alive()) return;
         btn.disabled = false;
         btn.textContent = "生成客户端";
         setBuildMsg("网络错误，无法连接构建网关", false);
@@ -404,7 +455,7 @@
     fetch(GW_BASE + "/gw/build/status", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        if (!pageEl || pageEl.style.display === "none") return;
+        if (!alive()) return;
         if (!$("tsdd-build-progress")) return;
         if (j.state === "queued" || j.state === "in_progress") {
           $("tsdd-build-progress-wrap").style.display = "block";
@@ -516,15 +567,15 @@
     return injectSplit();
   }
 
-  var mo = new MutationObserver(function () { injectMenu(); });
+  var mo = new MutationObserver(function () { injectMenu(); syncMenuState(); });
   function startWatch() {
     injectMenu();
-    mo.observe(document.body, { childList: true, subtree: true });
+    mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", startWatch);
   } else {
     startWatch();
   }
-  console.log("[TSDD] 客户端生成 / 注册设置补丁 v4 已加载");
+  console.log("[TSDD] 客户端生成 / 注册设置补丁 v5 已加载");
 })();

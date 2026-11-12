@@ -294,19 +294,21 @@ public class WKUIKitApplication {
             });
         });
 
-        // 添加聊天工具栏菜单
-        EndpointManager.getInstance().setMethod(EndpointCategory.wkChatToolBar + "_more", EndpointCategory.wkChatToolBar, 40, object -> {
-            IConversationContext iConversationContext = (IConversationContext) object;
-            View moreView = FaceManger.getInstance().getFunctionView(iConversationContext, chatFunctionMenu -> chatFunctionMenu.iChatFunctionCLick.onClick(iConversationContext));
-
-            return new ChatToolBarMenu("wk_chat_toolbar_more", R.mipmap.icon_chat_toolbar_more, R.mipmap.icon_chat_toolbar_more, moreView, (isSelected, iConversationContext13) -> {
-
-            });
-        });
-        //添加聊天功能面板
-        EndpointManager.getInstance().setMethod(EndpointCategory.chatFunction + "_chooseImg", EndpointCategory.chatFunction, 100, object -> new ChatFunctionMenu("chooseImg", R.mipmap.icon_func_album, mContext.get().getString(R.string.image), this::chooseIMG));
-        EndpointManager.getInstance().setMethod(EndpointCategory.chatFunction + "_chooseFile", EndpointCategory.chatFunction, 98, object -> new ChatFunctionMenu("chooseFile", R.drawable.icon_func_file, mContext.get().getString(R.string.chat_file), iConversationContext -> EndpointManager.getInstance().invoke("wk_chat_choose_file", iConversationContext)));
-        EndpointManager.getInstance().setMethod(EndpointCategory.chatFunction + "_chooseCard", EndpointCategory.chatFunction, 95, object -> new ChatFunctionMenu("chooseCard", R.mipmap.icon_func_card, mContext.get().getString(R.string.card), IConversationContext::sendCardMsg));
+        // 聊天工具栏第 5 个图标：上传文件。点击直接触发，不再弹出「+」功能面板，
+        // 避免与第 2 个图标（相册/发送图片）重复。
+        EndpointManager.getInstance().setMethod(EndpointCategory.wkChatToolBar + "_file", EndpointCategory.wkChatToolBar, 40, object -> new ChatToolBarMenu("wk_chat_toolbar_file", R.drawable.icon_chat_toolbar_file, R.drawable.icon_chat_toolbar_file, null, (isSelected, iConversationContext13) -> {
+            if (isSelected) {
+                EndpointManager.getInstance().invoke("wk_chat_choose_file", iConversationContext13);
+            }
+        }));
+        // 聊天工具栏第 6 个图标：发送名片（原「+」面板中的选项移出）
+        EndpointManager.getInstance().setMethod(EndpointCategory.wkChatToolBar + "_card", EndpointCategory.wkChatToolBar, 39, object -> new ChatToolBarMenu("wk_chat_toolbar_card", R.drawable.icon_chat_toolbar_card, R.drawable.icon_chat_toolbar_card, null, (isSelected, iConversationContext14) -> {
+            if (isSelected) {
+                iConversationContext14.sendCardMsg();
+            }
+        }));
+        // 说明：原「+」功能面板（图片 / 文件 / 名片）已移除。
+        // 图片由工具栏第 2 个图标负责，文件与名片改为上面的独立图标。
 
         //添加tab页
         EndpointManager.getInstance().setMethod(EndpointCategory.tabMenus + "_start_chat", EndpointCategory.tabMenus, 200, object -> new PopupMenuItem(mContext.get().getString(R.string.start_group_chat), R.mipmap.menu_chats, () -> {
