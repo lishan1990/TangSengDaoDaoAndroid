@@ -18,7 +18,13 @@ const CONF_PATH = path.join(__dirname, "config.json");
 const CLIENT_CONF_PATH = path.join(__dirname, "client-config.json"); // 客户端生成页的自定义配置（名称/平台/图标）
 const UPSTREAM_HOST = process.env.UPSTREAM_HOST || "tangsengdaodaoserver";
 const UPSTREAM_PORT = parseInt(process.env.UPSTREAM_PORT || "8090", 10);
+const MINIO_HOST = process.env.MINIO_HOST || "minio";
+const MINIO_PORT = parseInt(process.env.MINIO_PORT || "9000", 10);
 const PORT = parseInt(process.env.PORT || "9000", 10);
+// 服务端生成的头像/文件下载地址指向 EXTERNAL_IP:9000，而 9000 通常未对公网放行。
+// 网关把 302 Location 改写为已放行的 8112/file/，并代理到内网 MinIO，避免图片全部加载失败。
+const DEFAULT_PUBLIC_API_BASE = process.env.PUBLIC_API_BASE || "http://127.0.0.1:8112";
+const DEFAULT_MINIO_PUBLIC_BASE = process.env.MINIO_PUBLIC_BASE || "http://127.0.0.1:9000";
 
 /* ---------------- 配置（每次请求读取，FTP 改文件即时生效） ---------------- */
 const DEFAULT_CONF = {
@@ -207,16 +213,38 @@ async function handleRegister(req, res, urlPath) {
   upReq.end(payload);
 }
 
+/* ---------------- 文件下载地址改写 ---------------- */
+// 业务服务对 /v1/groups/:id/avatar、/v1/users/:id/avatar、聊天文件等返回 302，
+// Location 指向 MinIO 的公网地址（EXTERNAL_IP:9000）。该端口未放行时图片一律加载失败，
+// 表现为「群头像提示修改成功但一直不生效」。这里改写到网关自己的 /file/ 路径。
+function rewriteMinioLocation(loc, conf) {
+  if (typeof loc !== "string" || !loc) return loc;
+  const publicApi = conf.publicApiBase || DEFAULT_PUBLIC_API_BASE;
+  const minioPublic = conf.minioPublicBase || DEFAULT_MINIO_PUBLIC_BASE;
+  if (loc.indexOf(minioPublic + "/") === 0) {
+    return publicApi + "/file/" + loc.slice(minioPublic.length + 1);
+  }
+  // 兜底：任意 host 的 :9000 下载地址
+  return loc.replace(/^https?:\/\/[^/]+:9000\//, publicApi + "/file/");
+}
+
 /* ---------------- 透传代理 ---------------- */
-function proxy(req, res) {
+function proxy(req, res, conf, host, port, opts) {
+  host = host || UPSTREAM_HOST;
+  port = port || UPSTREAM_PORT;
+  opts = opts || {};
   const upReq = http.request({
-    host: UPSTREAM_HOST, port: UPSTREAM_PORT, path: req.url, method: req.method,
-    headers: Object.assign({}, req.headers, { host: `${UPSTREAM_HOST}:${UPSTREAM_PORT}` }),
+    host: host, port: port, path: req.url, method: req.method,
+    headers: Object.assign({}, req.headers, { host: `${host}:${port}` }),
     timeout: 10 * 60 * 1000,
   }, (upRes) => {
     const headers = Object.assign({}, upRes.headers);
     delete headers["transfer-encoding"];
     delete headers["content-length"]; // 流式转发用 chunked
+    if (!opts.noRewrite && headers.location) {
+      headers.location = rewriteMinioLocation(headers.location, conf || loadConf());
+    }
+    if (opts.cors) headers["access-control-allow-origin"] = "*";
     res.writeHead(upRes.statusCode, headers);
     upRes.pipe(res);
   });
@@ -465,9 +493,15 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
+  // 头像/文件：302 改写后的 /file/xxx 请求转发到内网 MinIO（9000 无需对公网开放）
+  if (p.startsWith("/file/")) {
+    req.url = req.url.replace(/^\/file\//, "/");
+    return proxy(req, res, conf, MINIO_HOST, MINIO_PORT, { noRewrite: true, cors: true });
+  }
+
   // 其余全部透传（保留原始 url，含 /api 前缀的请求转成 /v1 供上游）
   if (p.startsWith("/api/")) req.url = req.url.replace("/api/", "/");
-  proxy(req, res);
+  proxy(req, res, conf);
 });
 
 server.setTimeout(10 * 60 * 1000);
